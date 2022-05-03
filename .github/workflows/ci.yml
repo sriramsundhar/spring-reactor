@@ -1,0 +1,117 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+# This workflow will build a Java project with Gradle and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-gradle
+
+name: Java CI with Gradle
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: example
+          MYSQL_DATABASE: products
+        ports:
+          - 33306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+      - name: test
+        run: |
+          ./gradlew bootRun &
+          ./gradlew test
+        env:
+          SPRING_R2DBC_URL: r2dbc:mysql://localhost:33306
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+      - name: OWASP checker
+        uses: gradle/gradle-build-action@0d13054264b0bb894ded474f08ebb30921341cee
+        with:
+          arguments: check -x test
+
+  release:
+    if: startsWith(github.event.head_commit.message, 'Gradle Release Plugin') != true && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: example
+          MYSQL_DATABASE: products
+        ports:
+          - 33306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    permissions:
+      contents: read
+      packages: write
+    # Service containers to run with `container-job`
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          server-id: github # Value of the distributionManagement/repository/id field of the pom.xml
+          settings-path: ${{ github.workspace }} # location for the settings.xml file
+
+      - name: Publish
+        run: |
+          echo "dockerlogin"
+          docker login -u sriramsundhar -p ${DOCKER_TOKEN}
+          echo "setup ssh agent"
+          eval `ssh-agent -s`
+          echo "setup"
+          echo "$CI_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - >/dev/null
+          echo "added private ssh"
+          mkdir -p ~/.ssh
+          touch ~/.ssh/id_rsa.pub
+          echo "$CI_SSH_PUBLIC_KEY" | tr -d '\r' > ~/.ssh/id_rsa.pub
+          echo "added public ssh"
+          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com" && git config user.name "github_action"
+          echo "git@github.com:${GITHUB_REPOSITORY}.git"
+          git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
+          git fetch origin main && git checkout main
+          git remote -v
+          ./gradlew bootRun &
+          ./gradlew release -Prelease.useAutomaticVersion=true -x test
+        env:
+          CI_SSH_PUBLIC_KEY: ${{ secrets.CI_SSH_PUBLIC_KEY}}
+          CI_SSH_PRIVATE_KEY: ${{ secrets.CI_SSH_PRIVATE_KEY}}
+          ARTIFACTORY_USERNAME: ${{ github.actor }}
+          ARTIFACTORY_PASSCODE: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_TOKEN: ${{secrets.DOCKER_TOKEN}}
+          SPRING_R2DBC_URL: r2dbc:mysql://localhost:33306
+

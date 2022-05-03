@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: spring-reactor
+spec:
+  containers:
+    - name: spring-reactor
+      image: sriramsundhar/spring-reactor
+      env:
+        - name: SPRING_R2DBC_URL
+          value: r2dbc:mysql://host.docker.internal:3306

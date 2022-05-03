@@ -1,0 +1,24 @@
+version: '3'
+volumes:
+  mySqlVolume1:
+    driver: local
+  mySqlWBVloume:
+    driver: local
+  mySqlWBLogVloume:
+    driver: local
+services:
+  db:
+    image: mysql:8
+    restart: always
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+      MYSQL_DATABASE: products
+    volumes:
+      - mySqlVolume1:/var/lib/mysql
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
